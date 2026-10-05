@@ -1,0 +1,376 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String     @id @default(cuid())
+  email          String?    @unique
+  phone          String?    @unique
+  name           String?
+  image          String?
+  emailVerified  DateTime?
+  passwordHash   String?
+  role           String   @default("MERCHANT")
+  status         String @default("PENDING")
+  mfaEnabled     Boolean    @default(false)
+  mfaSecretEnc   String?
+  authVersion    Int        @default(0)
+  merchant       Merchant?
+  oauthAccounts  OAuthAccount[]
+  otpChallenges  OtpChallenge[]
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  accounts       Account[]
+  sessions       Session[]
+  auditEntries   AuditLog[] @relation("AuditActor")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([role, status])
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id          String     @id @default(cuid())
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination String
+  purpose     String
+  tokenHash   String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  failedAttempts Int @default(0)
+  createdAt   DateTime   @default(now())
+
+  @@index([destination, purpose, expiresAt])
+}
+
+model Merchant {
+  id                  String             @id @default(cuid())
+  userId              String             @unique
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName         String
+  businessName        String?
+  kycStatus           String          @default("NOT_SUBMITTED")
+  approvedAt          DateTime?
+  transactionLimitPaisa BigInt?
+  defaultCurrency     String             @default("BDT")
+  gatewayAccounts     MerchantGateway[]
+  commissionRules     CommissionRule[]
+  apiKeys             ApiKey[]
+  transactions        Transaction[]
+  paymentLinks        PaymentLink[]
+  invoices            Invoice[]
+  webhookEndpoints    WebhookEndpoint[]
+  kycDocuments        KycDocument[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([kycStatus])
+}
+
+model Gateway {
+  id                  String             @id @default(cuid())
+  code                String             @unique
+  displayName         String
+  enabled             Boolean            @default(false)
+  supportedCurrencies String @default("BDT")
+  configurationEnc    String?
+  merchantAccounts    MerchantGateway[]
+  commissionRules    CommissionRule[]
+  transactions        Transaction[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model MerchantGateway {
+  id              String      @id @default(cuid())
+  merchantId      String
+  gatewayId       String
+  environment     String @default("SANDBOX")
+  enabled         Boolean     @default(false)
+  credentialsEnc  String?
+  merchant        Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  gateway         Gateway     @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([merchantId, gatewayId, environment])
+  @@index([gatewayId, enabled])
+}
+
+model CommissionRule {
+  id                String   @id @default(cuid())
+  gatewayId         String?
+  merchantId        String?
+  merchant          Merchant? @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  gateway           Gateway? @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+  fixedAmountPaisa  BigInt   @default(0)
+  percentageBps     Int      @default(0)
+  currency          String   @default("BDT")
+  minimumPaisa      BigInt?
+  maximumPaisa      BigInt?
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([gatewayId, merchantId, active])
+}
+
+model ApiKey {
+  id             String      @id @default(cuid())
+  merchantId     String
+  merchant       Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  label          String
+  publicKey      String      @unique
+  secretHash     String
+  environment    String @default("SANDBOX")
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([merchantId, environment, revokedAt])
+}
+
+model Transaction {
+  id                String            @id @default(cuid())
+  merchantId        String
+  gatewayId         String?
+  merchant          Merchant          @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  gateway           Gateway?          @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  externalReference String?
+  gatewayReference  String?
+  checkoutUrlEnc    String?
+  environment       String       @default("SANDBOX")
+  amountPaisa       BigInt
+  feePaisa          BigInt             @default(0)
+  currency          String             @default("BDT")
+  status            String  @default("CREATED")
+  customerEmail     String?
+  customerPhone     String?
+  metadata          Json?
+  paymentLinkId     String?
+  paymentLink       PaymentLink?       @relation(fields: [paymentLinkId], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([merchantId, environment, externalReference])
+  @@index([merchantId, createdAt])
+  @@index([status, createdAt])
+  @@index([gatewayId, gatewayReference])
+}
+
+model PaymentLink {
+  id             String        @id @default(cuid())
+  merchantId     String
+  merchant       Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  slug           String        @unique
+  title          String
+  amountPaisa    BigInt?
+  currency       String        @default("BDT")
+  expiresAt      DateTime?
+  active         Boolean       @default(true)
+  transactions   Transaction[]
+  createdAt      DateTime      @default(now())
+
+  @@index([merchantId, active])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  merchantId     String
+  merchant       Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  number         String
+  customerName   String
+  customerEmail  String?
+  currency       String        @default("BDT")
+  amountPaisa    BigInt
+  dueAt          DateTime?
+  status         String @default("DRAFT")
+  description    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([merchantId, number])
+  @@index([merchantId, status, createdAt])
+}
+
+model GatewayEvent {
+  id                String   @id @default(cuid())
+  gatewayCode       String
+  environment       String @default("SANDBOX")
+  eventId           String
+  transactionId     String?
+  payloadDigest     String
+  receivedAt        DateTime @default(now())
+
+  @@unique([gatewayCode, environment, eventId])
+  @@index([transactionId, receivedAt])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+model WebhookEndpoint {
+  id              String        @id @default(cuid())
+  merchantId      String
+  merchant        Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  url             String
+  signingSecretEnc String
+  enabled         Boolean       @default(true)
+  deliveries      WebhookDelivery[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([merchantId, enabled])
+}
+
+model WebhookDelivery {
+  id              String        @id @default(cuid())
+  endpointId      String
+  endpoint        WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventId         String
+  payload         Json
+  status          String @default("PENDING")
+  attempts        Int           @default(0)
+  nextAttemptAt   DateTime      @default(now())
+  lastResponseCode Int?
+  lastError       String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([endpointId, eventId])
+  @@index([status, nextAttemptAt])
+}
+
+model KycDocument {
+  id          String    @id @default(cuid())
+  merchantId  String
+  merchant    Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  documentType String
+  storageKey  String
+  status      String @default("PENDING")
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([merchantId, status])
+}
+
+model CmsPage {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  published   Boolean  @default(false)
+  sections    Json
+  updatedAt   DateTime @updatedAt
+}
+
+model CmsSection {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  type        String
+  content     Json
+  sortOrder   Int      @default(0)
+  enabled     Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, sortOrder])
+}
+
+model NavigationItem {
+  id          String   @id @default(cuid())
+  location    String
+  label       String
+  href        String
+  sortOrder   Int      @default(0)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([location, enabled, sortOrder])
+  @@unique([location, label])
+}
+
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemSetting {
+  key         String   @id
+  value       Json
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actor       User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action      String
+  resource    String
+  resourceId  String?
+  ipAddress   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([resource, resourceId, createdAt])
+}

@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+/prisma/dev.db
+/prisma/dev.db-journal
+/var/private-uploads/
+/node_modules
+/.next

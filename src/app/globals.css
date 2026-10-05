@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-white text-slate-900 antialiased; }
+}
+
+@layer components {
+  .container-shell { @apply mx-auto w-full max-w-7xl px-5 sm:px-8; }
+  .section-space { @apply py-20 sm:py-24; }
+  .section-kicker { @apply text-xs font-bold tracking-[.18em] text-brand-600; }
+  .section-title { @apply mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl; }
+}
